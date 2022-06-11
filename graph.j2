@@ -1,0 +1,43 @@
+digraph {
+    node [shape=box, style=filled];
+    rankdir=LR;
+    splines=false;
+
+    {% for header_file in header_files %}
+    {{ header_file.node_str() }}
+
+    {% endfor %}
+
+    {% for source_file in source_files %}
+    {{ source_file.node_str() }}
+
+    {% endfor %}
+
+    {% for component in components %}
+    {{ component.node_str() }}
+
+    {% endfor %}
+
+    {% for header_file1 in header_files %}
+    {% for header_file2 in header_file1.includes %}
+    {{ header_file1.edge_str() }} -> {{ header_file2.edge_str() }};
+    {% endfor %}
+    {% endfor %}
+
+    {% for source_file in source_files %}
+    {% for header_file in source_file.includes %}
+    {{ source_file.edge_str() }} -> {{ header_file.edge_str() }};
+    {% endfor %}
+    {% endfor %}
+
+    {% for component in components %}
+    {% for header_file in component.header_file.includes %}
+    {{ component.header_file.edge_str() }} -> {{ header_file.edge_str() }};
+    {% endfor %}
+    {% for header_file in component.source_file.includes %}
+    {% if header_file != component.header_file %}
+    {{ component.source_file.edge_str() }} -> {{ header_file.edge_str() }};
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+}
