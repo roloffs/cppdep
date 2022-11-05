@@ -4,33 +4,22 @@ digraph {
     splines=false; // prints straight lines, instead of curved splines (ortho)
     compound=true; // allows edges between subgraphs
 
-    {# {% for source_file in source_files %}
-    {{ source_file.node_str() }}
-
-    {% endfor %} #}
-
-    {% for component in components %}
-    {{ component.node_str() }}
+    {% for package in packages %}
+    {{ package.node_str() }}
 
     {% endfor %}
 
     {% for source_file1 in source_files %}
     {% for source_file2 in source_file1.includes %}
-    {{ source_file1.edge_str() }} -> {{ source_file2.edge_str() }}
-    {% if source_file1.component != source_file2.component %}
-    [ltail="{{ source_file1.component.id() }}", lhead="{{ source_file2.component.id() }}"];
+    {% if source_file1.component.package == source_file2.component.package %}
+    {% if source_file1.component == source_file2.component %}
+    {{ source_file1.id_str() }} -> {{ source_file2.id_str() }};
+    {% else %}
+    {{ source_file1.id_str() }} -> {{ source_file2.id_str() }} [ltail={{ source_file1.component.id_str() }}, lhead={{ source_file2.component.id_str() }}];
+    {% endif %}
+    {% else %}
+    {{ source_file1.id_str() }} -> {{ source_file2.id_str() }} [ltail={{ source_file1.component.package.id_str() }}, lhead={{ source_file2.component.package.id_str() }}];
     {% endif %}
     {% endfor %}
     {% endfor %}
-
-    {# {% for component in components %}
-    {% for header_file in component.header_file.includes %}
-    {{ component.header_file.edge_str() }} -> {{ header_file.edge_str() }};
-    {% endfor %}
-    {% for header_file in component.source_file.includes %}
-    {% if header_file != component.header_file %}
-    {{ component.source_file.edge_str() }} -> {{ header_file.edge_str() }};
-    {% endif %}
-    {% endfor %}
-    {% endfor %} #}
 }

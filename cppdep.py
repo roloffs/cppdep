@@ -23,47 +23,77 @@ class SourceFile:
     def id(self):
         return self.file_path
 
-    def name(self):
-        return os.path.basename(self.id())
+    def id_str(self):
+        return f'"{self.id()}"'
+
+    def name_str(self):
+        return f'"{os.path.basename(self.id())}"'
 
     def node_str(self):
         return f'''
-        "{self.id()}" [
+        {self.id_str()} [
             shape=box,
             style=filled,
             color={'blue' if self.root_file else 'black'},
             penwidth={2 if self.root_file else 1},
             fillcolor={'green' if self.main_file else 'red' if self.missing else 'white'},
             margin="0.1,0",
-            label="{self.name()}"];'''
-
-    def edge_str(self):
-        return f'"{self.id()}"'
+            label={self.name_str()}];'''
 
 
 class Component:
     def __init__(self):
         self.source_files = list()
+        self.package = None
 
     def add_source_file(self, source_file):
         self.source_files.append(source_file)
         source_file.component = self
 
     def id(self):
-        return f'cluster_{os.path.splitext(self.source_files[0].id())[0]}'
+        return os.path.splitext(self.source_files[0].id())[0]
 
-    def name(self):
-        return os.path.basename(self.id())
+    def id_str(self):
+        return f'"cluster_{self.id()}"'
+
+    def name_str(self):
+        return f'"{os.path.basename(self.id())}"'
 
     def node_str(self):
         newline='\n'
-        return f'''subgraph "{self.id()}" {{
+        return f'''subgraph {self.id_str()} {{
         rank=same;
-        label="{self.name()}";
+        label={self.name_str()};
         style=filled;
         fillcolor=lightgrey;
 {newline.join([file.node_str() for file in self.source_files])}
     }}'''
+
+
+class Package:
+    def __init__(self):
+        self.components = list()
+
+    def add_component(self, component):
+        self.components.append(component)
+        component.package = self
+
+    def id(self):
+        return os.path.dirname(self.components[0].id())
+
+    def id_str(self):
+        return f'"cluster_{self.id()}"'
+
+    def name_str(self):
+        return f'"{os.path.basename(self.id())}"'
+
+    def node_str(self):
+        newline='\n'
+        return f'''subgraph {self.id_str()} {{ subgraph "cluster_{self.id()}_" {{
+        label={self.name_str()};
+        fontsize=18;
+{newline.join([component.node_str() for component in self.components])}
+        }} }}'''
 
 
 def find_source_files(source_dirs):
@@ -112,8 +142,10 @@ def preprocess_source_files(source_files, include_dirs, macros):
         if source_file.missing:
             return
 
+        print(f'Preprocess {source_file.file_path}')
+
         # grep for main function in source file
-        grep_cmd = ['grep', r'^\s*\bint\b\s*\bmain\b', source_file.file_path]
+        grep_cmd = ['grep', '-E', r'^\s*\b(int|auto)\b\s*\bmain\b', source_file.file_path]
         # print(' '.join(grep_cmd))
         process = subprocess.run(
             grep_cmd,
@@ -126,7 +158,7 @@ def preprocess_source_files(source_files, include_dirs, macros):
         # extract dependencies from source file
         macro_flags = [f'-D{macro}' for macro in macros]
         compile_cmd = ['g++', '-I-', '-MM', '-MG'] + macro_flags + ['-x', 'c++', source_file.file_path]
-        print(' '.join(compile_cmd))
+        # print(' '.join(compile_cmd))
         process = subprocess.run(
             compile_cmd,
             stdout=subprocess.PIPE,
@@ -178,37 +210,31 @@ def preprocess_source_files(source_files, include_dirs, macros):
 
 
 def component_analysis(source_files):
-    components = list()
-
-    for source_file1 in source_files.values():
-        file_root1, file_ext1 = os.path.splitext(os.path.basename(source_file1.file_path))
-
-        for source_file2 in source_file1.includes:
-            file_root2, file_ext2 = os.path.splitext(os.path.basename(source_file2.file_path))
-
-            if file_root1 == file_root2 and file_ext1 != file_ext2:
-                if source_file1.component and source_file2.component:
-                    continue
-
-                elif source_file1.component and not source_file2.component:
-                    source_file1.component.add_source_file(source_file2)
-
-                elif not source_file1.component and source_file2.component:
-                    source_file2.component.add_source_file(source_file1)
-
-                else:
-                    component = Component()
-                    component.add_source_file(source_file1)
-                    component.add_source_file(source_file2)
-                    components.append(component)
+    components = dict()
 
     for source_file in source_files.values():
-        if not source_file.component:
-            component = Component()
-            component.add_source_file(source_file)
-            components.append(component)
+        cmp_id = os.path.splitext(source_file.id())[0]
+        if not cmp_id in components:
+            components[cmp_id] = Component()
+
+        component = components[cmp_id]
+        component.add_source_file(source_file)
 
     return components
+
+
+def package_analysis(components):
+    packages = dict()
+
+    for component in components.values():
+        pkg_id = os.path.dirname(component.id())
+        if not pkg_id in packages:
+            packages[pkg_id] = Package()
+
+        package = packages[pkg_id]
+        package.add_component(component)
+
+    return packages
 
 
 def get_source_files(file_paths, source_files_db):
@@ -272,7 +298,7 @@ def transitive_reduction(source_files):
 
         for child1 in node.includes.copy():
             for child2 in node.includes.copy():
-                if child1 != child2 and child1 in reachable_nodes[child2]:
+                if child1 != child2 and node.component != child1.component and child1 in reachable_nodes[child2]:
                     node.includes.remove(child1)
                     break
 
@@ -310,6 +336,7 @@ def parse_arguments():
     parser.add_argument('-I', '--include_dir', metavar='include-dir', action='append', default=list())
     parser.add_argument('-D', '--macro', action='append', default=list())
     parser.add_argument('-o', '--outfile', nargs=1, default='graph.dot')
+    parser.add_argument('-n', '--no-transitive-reduction', action='store_true')
     return parser.parse_args()
 
 
@@ -318,14 +345,15 @@ def main():
     source_files = find_source_files(args.source_dir)
     source_files = preprocess_source_files(source_files, args.include_dir, args.macro)
     components = component_analysis(source_files)
+    packages = package_analysis(components)
+
+    if not args.no_transitive_reduction:
+        transitive_reduction(source_files)
 
     # source_files = get_source_files(args.source_file, source_files_db)
     # preprocess_source_files(source_files, source_files_db, args.include_dir, args.macro)
-
-    transitive_reduction(source_files)
     # source_files = get_connected_graphs(source_files)
-
-    render_graph({"source_files": source_files.values(), "components": components}, args.outfile)
+    render_graph({"source_files": source_files.values(), "components": components.values(), "packages": packages.values()}, args.outfile)
 
     return 0
 
