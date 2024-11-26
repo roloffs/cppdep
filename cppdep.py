@@ -19,6 +19,8 @@ class SourceFile:
         self.root_file = root_file
         self.main_file = main_file
         self.missing = missing
+        self.preprocessed = False
+        self.compile_error = False
         self.component = None
         self.includes = []
 
@@ -35,12 +37,15 @@ class SourceFile:
             style=filled,
             color={'blue' if self.root_file else 'black'},
             penwidth={2 if self.root_file else 1},
-            fillcolor={'green' if self.main_file else 'red' if self.missing else 'white'},
+            fillcolor={'green' if self.main_file else 'red' if self.missing else 'blue' if self.compile_error else 'white'},
             margin="0.1,0",
             label="{self.name()}"];"""
 
     def edge_str(self):
         return f'"{self.id()}"'
+
+    def __str__(self):
+        return self.id()
 
 
 class Component:
@@ -67,18 +72,22 @@ class Component:
 {newline.join([file.node_str() for file in self.source_files])}
     }}"""
 
+    def __str__(self):
+        return self.id()
+
 
 def find_source_files(source_dirs):
     source_dirs = list(set(map(os.path.abspath, source_dirs)))
     source_files = {}
 
-    # scan source dirs for source files
+    # Scan source dirs for source files.
     for source_dir in source_dirs:
-        for root, dirs, files in os.walk(source_dir):
+        # print(f"Find source files recursively in {source_dir}")
+        for root, _, files in os.walk(source_dir):
             for filename in files:
-                file_root, file_ext = os.path.splitext(filename)
+                _, file_ext = os.path.splitext(filename)
 
-                # check for source file
+                # Check for source file.
                 if file_ext.lower() in SourceFile.file_extensions:
                     file_path = os.path.join(root, filename)
                     source_files[file_path] = SourceFile(file_path)
@@ -86,106 +95,121 @@ def find_source_files(source_dirs):
     return source_files
 
 
-def find_path(include_path, include_dirs, local_dir):
-    # first fit search in include dirs
+def find_include_file(include_path, include_dirs, local_dir):
+    # First fit search in include dirs.
     for include_dir in include_dirs:
         file_path = os.path.join(include_dir, include_path)
         if os.path.exists(file_path):
             return file_path
 
-    # check local dir
+    # Check full include path in local dir.
     file_path = os.path.join(local_dir, include_path)
     if os.path.exists(file_path):
         return file_path
 
+    # Check whether include path matches with local dir.
+    if local_dir.endswith(os.path.dirname(include_path)):
+        file_path = os.path.join(local_dir, os.path.basename(include_path))
+        if os.path.exists(file_path):
+            return file_path
+
     return None
+
+
+def preprocess_source_file(
+    source_file, source_files, include_files, include_dirs, macros
+):
+    if source_file.preprocessed or source_file.missing:
+        return
+    source_file.preprocessed = True
+    # print(f"Preprocess {source_file}")
+
+    # Check for main function in source file.
+    grep_cmd = [
+        "grep",
+        "-E",
+        r"^\s*\b(int|auto)\b\s*\bmain\b\s*\(.*\)",
+        source_file.file_path,
+    ]
+    # print(" ".join(grep_cmd))
+    process = subprocess.run(
+        grep_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if process.returncode == 0:
+        source_file.main_file = True
+
+    # Extract dependencies from source file.
+    macro_flags = [f"-D{macro}" for macro in macros]
+    compile_cmd = (
+        ["g++", "-MM", "-MG"]
+        + macro_flags
+        + ["-x", "c++", source_file.file_path]
+    )
+    # print(" ".join(compile_cmd))
+    process = subprocess.run(
+        compile_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        check=False,
+    )
+
+    if process.returncode == 0:
+        includes = process.stdout.replace("\\", "").split()
+        if not includes:
+            return
+
+        for include_path in list(map(os.path.normpath, includes[2:])):
+            local_dir = os.path.dirname(source_file.file_path)
+            file_path = find_include_file(include_path, include_dirs, local_dir)
+            # print(f"Lookup {include_path} -> {file_path}")
+
+            if file_path:
+                if file_path in source_files:
+                    child = source_files[file_path]
+                elif file_path in include_files:
+                    child = include_files[file_path]
+                else:
+                    child = SourceFile(file_path)
+                    include_files[file_path] = child
+
+            else:
+                if include_path in source_files:
+                    child = source_files[include_path]
+                elif include_path in include_files:
+                    child = include_files[include_path]
+                else:
+                    # print(f"Included file not found: {include_path}")
+                    child = SourceFile(include_path, missing=True)
+                    include_files[include_path] = child
+
+            source_file.includes.append(child)
+            preprocess_source_file(
+                child, source_files, include_files, include_dirs, macros
+            )
+
+    else:
+        # print(f"Compile error for {source_file.file_path}:\n{process.stderr}")
+        source_file.compile_error = True
 
 
 def preprocess_source_files(source_files, include_dirs, macros):
     include_dirs = list(set(map(os.path.abspath, include_dirs)))
-    new_source_files = {}
-    out_source_files = {}
-
-    def preprocess_source_file(source_file, include_dirs, macros):
-        if source_file.file_path in out_source_files:
-            return
-        out_source_files[source_file.file_path] = source_file
-
-        if source_file.missing:
-            return
-
-        # grep for main function in source file
-        grep_cmd = ["grep", r"^\s*\bint\b\s*\bmain\b", source_file.file_path]
-        # print(' '.join(grep_cmd))
-        process = subprocess.run(
-            grep_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        if process.returncode == 0:
-            source_file.main_file = True
-
-        # extract dependencies from source file
-        macro_flags = [f"-D{macro}" for macro in macros]
-        compile_cmd = (
-            ["g++", "-I-", "-MM", "-MG"]
-            + macro_flags
-            + ["-x", "c++", source_file.file_path]
-        )
-        print(" ".join(compile_cmd))
-        process = subprocess.run(
-            compile_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
-
-        source_file.includes.clear()
-        if process.returncode == 0:
-            includes = process.stdout.replace("\\", "").split()
-            if not includes:
-                return
-
-            for include_path in list(map(os.path.normpath, includes[2:])):
-                local_dir = os.path.dirname(source_file.file_path)
-                file_path = find_path(include_path, include_dirs, local_dir)
-                # print(f'Lookup {include_path} in include dirs -> {file_path}')
-
-                if file_path:
-                    if file_path in source_files:
-                        child = source_files[file_path]
-                    elif file_path in new_source_files:
-                        child = new_source_files[file_path]
-                    else:
-                        child = SourceFile(file_path)
-                        new_source_files[file_path] = child
-
-                else:
-                    if include_path in source_files:
-                        child = source_files[include_path]
-                    elif include_path in new_source_files:
-                        child = new_source_files[include_path]
-                    else:
-                        print(f"Included file not found: {include_path}")
-                        child = SourceFile(include_path, missing=True)
-                        new_source_files[include_path] = child
-
-                source_file.includes.append(child)
-                preprocess_source_file(child, include_dirs, macros)
-
-        else:
-            print(
-                f"Compile error for {source_file.file_path}:\n{process.stderr}"
-            )
-            # sys.exit(1)
-
+    include_files = {}
     for source_file in source_files.values():
-        preprocess_source_file(source_file, include_dirs, macros)
-
-    return out_source_files
+        preprocess_source_file(
+            source_file, source_files, include_files, include_dirs, macros
+        )
+    return source_files | include_files
 
 
 def component_analysis(source_files):
     components = []
 
+    # Create multi-file components.
     for source_file1 in source_files.values():
         file_root1, file_ext1 = os.path.splitext(
             os.path.basename(source_file1.file_path)
@@ -198,7 +222,7 @@ def component_analysis(source_files):
 
             if file_root1 == file_root2 and file_ext1 != file_ext2:
                 if source_file1.component and source_file2.component:
-                    continue
+                    pass
 
                 elif source_file1.component and not source_file2.component:
                     source_file1.component.add_source_file(source_file2)
@@ -212,6 +236,7 @@ def component_analysis(source_files):
                     component.add_source_file(source_file2)
                     components.append(component)
 
+    # Create single-file components.
     for source_file in source_files.values():
         if not source_file.component:
             component = Component()
@@ -221,43 +246,8 @@ def component_analysis(source_files):
     return components
 
 
-def get_source_files(file_paths, source_files_db):
-    file_paths = list(set(map(os.path.abspath, file_paths)))
-    source_files = {}
-
-    for file_path in file_paths:
-        if not os.path.exists(file_path):
-            print(f"File not found: {file_path}")
-            sys.exit(1)
-
-        if file_path not in source_files_db:
-            source_files_db[file_path] = SourceFile(file_path)
-
-        source_file = source_files_db[file_path]
-        source_files[file_path] = source_file
-
-    return source_files
-
-
-def get_connected_graphs(source_files):
-    out_source_files = {}
-
-    def visit(node):
-        if node.file_path in out_source_files:
-            return
-        out_source_files[node.file_path] = node
-        for child in node.includes:
-            visit(child)
-
-    for source_file in source_files.values():
-        source_file.root_file = True
-        visit(source_file)
-
-    return out_source_files
-
-
 def transitive_reduction(source_files):
-    # transitive reduction
+    # Transitive reduction.
     temp_mark = {}
     permanent_mark = {}
     reachable_nodes = {}
@@ -269,11 +259,11 @@ def transitive_reduction(source_files):
 
     def visit(node):
         if permanent_mark[node]:
-            # already visited
+            # Already visited.
             return
 
         if temp_mark[node]:
-            # cycle detected
+            # Cycle detected.
             return
 
         temp_mark[node] = True
@@ -281,10 +271,12 @@ def transitive_reduction(source_files):
             visit(child)
 
         for child1 in node.includes.copy():
-            for child2 in node.includes.copy():
-                if child1 != child2 and child1 in reachable_nodes[child2]:
-                    node.includes.remove(child1)
-                    break
+            # Do not remove intra-component edges.
+            if node.component is not child1.component:
+                for child2 in node.includes.copy():
+                    if child1 != child2 and child1 in reachable_nodes[child2]:
+                        node.includes.remove(child1)
+                        break
 
         for child in node.includes:
             reachable_nodes[node].add(child)
@@ -295,6 +287,8 @@ def transitive_reduction(source_files):
 
     for source_file in source_files.values():
         visit(source_file)
+
+    return source_files
 
 
 def render_graph(graph_dict, outfile):
@@ -338,18 +332,11 @@ def main():
         source_files, args.include_dir, args.macro
     )
     components = component_analysis(source_files)
-
-    # source_files = get_source_files(args.source_file, source_files_db)
-    # preprocess_source_files(source_files, source_files_db, args.include_dir, args.macro)
-
-    transitive_reduction(source_files)
-    # source_files = get_connected_graphs(source_files)
-
+    source_files = transitive_reduction(source_files)
     render_graph(
         {"source_files": source_files.values(), "components": components},
         args.outfile,
     )
-
     return 0
 
 
