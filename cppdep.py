@@ -102,16 +102,14 @@ def find_include_file(include_path, include_dirs, local_dir):
         if os.path.exists(file_path):
             return file_path
 
-    # Check full include path in local dir.
-    file_path = os.path.join(local_dir, include_path)
-    if os.path.exists(file_path):
-        return file_path
-
-    # Check whether include path matches with local dir.
-    if local_dir.endswith(os.path.dirname(include_path)):
-        file_path = os.path.join(local_dir, os.path.basename(include_path))
+    # Successively go up in the file hierarchy of local dir and check whether
+    # appending the include path results in an existing file.
+    tmp_dir = local_dir
+    while tmp_dir != "/":
+        file_path = os.path.join(tmp_dir, include_path)
         if os.path.exists(file_path):
             return file_path
+        tmp_dir = os.path.dirname(tmp_dir)
 
     return None
 
