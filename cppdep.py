@@ -1,24 +1,26 @@
 #!/usr/bin/env python
 
-import os
-import sys
-import subprocess
 import argparse
 import json
+import os
+import subprocess
+import sys
 
 from jinja2 import Environment, FileSystemLoader
 
 
 class SourceFile:
-    file_extensions = {'.cpp', '.cc', '.c++', '.hpp', '.h', '.inl'}
+    file_extensions = {".cpp", ".cc", ".c++", ".hpp", ".h", ".inl"}
 
-    def __init__(self, file_path, root_file=False, main_file=False, missing=False):
+    def __init__(
+        self, file_path, root_file=False, main_file=False, missing=False
+    ):
         self.file_path = file_path
         self.root_file = root_file
         self.main_file = main_file
         self.missing = missing
         self.component = None
-        self.includes = list()
+        self.includes = []
 
     def id(self):
         return self.file_path
@@ -27,7 +29,7 @@ class SourceFile:
         return os.path.basename(self.id())
 
     def node_str(self):
-        return f'''
+        return f"""
         "{self.id()}" [
             shape=box,
             style=filled,
@@ -35,7 +37,7 @@ class SourceFile:
             penwidth={2 if self.root_file else 1},
             fillcolor={'green' if self.main_file else 'red' if self.missing else 'white'},
             margin="0.1,0",
-            label="{self.name()}"];'''
+            label="{self.name()}"];"""
 
     def edge_str(self):
         return f'"{self.id()}"'
@@ -43,32 +45,32 @@ class SourceFile:
 
 class Component:
     def __init__(self):
-        self.source_files = list()
+        self.source_files = []
 
     def add_source_file(self, source_file):
         self.source_files.append(source_file)
         source_file.component = self
 
     def id(self):
-        return f'cluster_{os.path.splitext(self.source_files[0].id())[0]}'
+        return f"cluster_{os.path.splitext(self.source_files[0].id())[0]}"
 
     def name(self):
         return os.path.basename(self.id())
 
     def node_str(self):
-        newline='\n'
-        return f'''subgraph "{self.id()}" {{
+        newline = "\n"
+        return f"""subgraph "{self.id()}" {{
         rank=same;
         label="{self.name()}";
         style=filled;
         fillcolor=lightgrey;
 {newline.join([file.node_str() for file in self.source_files])}
-    }}'''
+    }}"""
 
 
 def find_source_files(source_dirs):
     source_dirs = list(set(map(os.path.abspath, source_dirs)))
-    source_files = dict()
+    source_files = {}
 
     # scan source dirs for source files
     for source_dir in source_dirs:
@@ -101,8 +103,8 @@ def find_path(include_path, include_dirs, local_dir):
 
 def preprocess_source_files(source_files, include_dirs, macros):
     include_dirs = list(set(map(os.path.abspath, include_dirs)))
-    new_source_files = dict()
-    out_source_files = dict()
+    new_source_files = {}
+    out_source_files = {}
 
     def preprocess_source_file(source_file, include_dirs, macros):
         if source_file.file_path in out_source_files:
@@ -113,30 +115,32 @@ def preprocess_source_files(source_files, include_dirs, macros):
             return
 
         # grep for main function in source file
-        grep_cmd = ['grep', r'^\s*\bint\b\s*\bmain\b', source_file.file_path]
+        grep_cmd = ["grep", r"^\s*\bint\b\s*\bmain\b", source_file.file_path]
         # print(' '.join(grep_cmd))
         process = subprocess.run(
-            grep_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            grep_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         if process.returncode == 0:
             source_file.main_file = True
 
         # extract dependencies from source file
-        macro_flags = [f'-D{macro}' for macro in macros]
-        compile_cmd = ['g++', '-I-', '-MM', '-MG'] + macro_flags + ['-x', 'c++', source_file.file_path]
-        print(' '.join(compile_cmd))
+        macro_flags = [f"-D{macro}" for macro in macros]
+        compile_cmd = (
+            ["g++", "-I-", "-MM", "-MG"]
+            + macro_flags
+            + ["-x", "c++", source_file.file_path]
+        )
+        print(" ".join(compile_cmd))
         process = subprocess.run(
             compile_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True
+            universal_newlines=True,
         )
 
         source_file.includes.clear()
         if process.returncode == 0:
-            includes = process.stdout.replace('\\', '').split()
+            includes = process.stdout.replace("\\", "").split()
             if not includes:
                 return
 
@@ -160,7 +164,7 @@ def preprocess_source_files(source_files, include_dirs, macros):
                     elif include_path in new_source_files:
                         child = new_source_files[include_path]
                     else:
-                        print(f'Included file not found: {include_path}')
+                        print(f"Included file not found: {include_path}")
                         child = SourceFile(include_path, missing=True)
                         new_source_files[include_path] = child
 
@@ -168,7 +172,9 @@ def preprocess_source_files(source_files, include_dirs, macros):
                 preprocess_source_file(child, include_dirs, macros)
 
         else:
-            print(f'Compile error for {source_file.file_path}:\n{process.stderr}')
+            print(
+                f"Compile error for {source_file.file_path}:\n{process.stderr}"
+            )
             # sys.exit(1)
 
     for source_file in source_files.values():
@@ -178,13 +184,17 @@ def preprocess_source_files(source_files, include_dirs, macros):
 
 
 def component_analysis(source_files):
-    components = list()
+    components = []
 
     for source_file1 in source_files.values():
-        file_root1, file_ext1 = os.path.splitext(os.path.basename(source_file1.file_path))
+        file_root1, file_ext1 = os.path.splitext(
+            os.path.basename(source_file1.file_path)
+        )
 
         for source_file2 in source_file1.includes:
-            file_root2, file_ext2 = os.path.splitext(os.path.basename(source_file2.file_path))
+            file_root2, file_ext2 = os.path.splitext(
+                os.path.basename(source_file2.file_path)
+            )
 
             if file_root1 == file_root2 and file_ext1 != file_ext2:
                 if source_file1.component and source_file2.component:
@@ -213,11 +223,11 @@ def component_analysis(source_files):
 
 def get_source_files(file_paths, source_files_db):
     file_paths = list(set(map(os.path.abspath, file_paths)))
-    source_files = dict()
+    source_files = {}
 
     for file_path in file_paths:
         if not os.path.exists(file_path):
-            print(f'File not found: {file_path}')
+            print(f"File not found: {file_path}")
             sys.exit(1)
 
         if file_path not in source_files_db:
@@ -230,7 +240,7 @@ def get_source_files(file_paths, source_files_db):
 
 
 def get_connected_graphs(source_files):
-    out_source_files = dict()
+    out_source_files = {}
 
     def visit(node):
         if node.file_path in out_source_files:
@@ -248,9 +258,9 @@ def get_connected_graphs(source_files):
 
 def transitive_reduction(source_files):
     # transitive reduction
-    temp_mark = dict()
-    permanent_mark = dict()
-    reachable_nodes = dict()
+    temp_mark = {}
+    permanent_mark = {}
+    reachable_nodes = {}
 
     for source_file in source_files.values():
         temp_mark[source_file] = False
@@ -292,11 +302,11 @@ def render_graph(graph_dict, outfile):
     env = Environment(
         loader=FileSystemLoader(script_path),
         trim_blocks=True,
-        lstrip_blocks=True
+        lstrip_blocks=True,
     )
-    graph_template = env.get_template('graph.j2')
+    graph_template = env.get_template("graph.j2")
     graph_template.stream(graph_dict).dump(outfile)
-    print(outfile + ' has been written')
+    print(outfile + " has been written")
 
 
 def to_dict(obj):
@@ -305,18 +315,28 @@ def to_dict(obj):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('source_file', metavar='source-file', nargs='*')
-    parser.add_argument('-S', '--source_dir', metavar='source-dir', action='append', default=list())
-    parser.add_argument('-I', '--include_dir', metavar='include-dir', action='append', default=list())
-    parser.add_argument('-D', '--macro', action='append', default=list())
-    parser.add_argument('-o', '--outfile', nargs=1, default='graph.dot')
+    parser.add_argument("source_file", metavar="source-file", nargs="*")
+    parser.add_argument(
+        "-S", "--source_dir", metavar="source-dir", action="append", default=[]
+    )
+    parser.add_argument(
+        "-I",
+        "--include_dir",
+        metavar="include-dir",
+        action="append",
+        default=[],
+    )
+    parser.add_argument("-D", "--macro", action="append", default=[])
+    parser.add_argument("-o", "--outfile", nargs=1, default="graph.dot")
     return parser.parse_args()
 
 
 def main():
     args = parse_arguments()
     source_files = find_source_files(args.source_dir)
-    source_files = preprocess_source_files(source_files, args.include_dir, args.macro)
+    source_files = preprocess_source_files(
+        source_files, args.include_dir, args.macro
+    )
     components = component_analysis(source_files)
 
     # source_files = get_source_files(args.source_file, source_files_db)
@@ -325,9 +345,13 @@ def main():
     transitive_reduction(source_files)
     # source_files = get_connected_graphs(source_files)
 
-    render_graph({"source_files": source_files.values(), "components": components}, args.outfile)
+    render_graph(
+        {"source_files": source_files.values(), "components": components},
+        args.outfile,
+    )
 
     return 0
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())
