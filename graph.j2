@@ -4,11 +4,6 @@ digraph {
     splines=false; // prints straight lines, instead of curved splines (ortho)
     compound=true; // allows edges between subgraphs
 
-    {# {% for source_file in source_files %}
-    {{ source_file.node_str() }}
-
-    {% endfor %} #}
-
     {% for component in components %}
     {{ component.node_str() }}
 
@@ -22,15 +17,4 @@ digraph {
     {% endif %}
     {% endfor %}
     {% endfor %}
-
-    {# {% for component in components %}
-    {% for header_file in component.header_file.includes %}
-    {{ component.header_file.edge_str() }} -> {{ header_file.edge_str() }};
-    {% endfor %}
-    {% for header_file in component.source_file.includes %}
-    {% if header_file != component.header_file %}
-    {{ component.source_file.edge_str() }} -> {{ header_file.edge_str() }};
-    {% endif %}
-    {% endfor %}
-    {% endfor %} #}
 }

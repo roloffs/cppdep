@@ -31,8 +31,7 @@ class SourceFile:
         return os.path.basename(self.id())
 
     def node_str(self):
-        return f"""
-        "{self.id()}" [
+        return f""""{self.id()}" [
             shape=box,
             style=filled,
             color={'blue' if self.root_file else 'black'},
@@ -69,7 +68,8 @@ class Component:
         label="{self.name()}";
         style=filled;
         fillcolor=lightgrey;
-{newline.join([file.node_str() for file in self.source_files])}
+
+        {f"{newline}{newline}        ".join([file.node_str() for file in self.source_files])}
     }}"""
 
     def __str__(self):
