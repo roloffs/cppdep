@@ -270,11 +270,14 @@ def transitive_reduction(source_files):
 
         for child1 in node.includes.copy():
             # Do not remove intra-component edges.
-            if node.component is not child1.component:
-                for child2 in node.includes.copy():
-                    if child1 != child2 and child1 in reachable_nodes[child2]:
-                        node.includes.remove(child1)
-                        break
+            if child1.component is node.component:
+                continue
+            for child2 in node.includes.copy():
+                if child2 is child1:
+                    continue
+                if child1 in reachable_nodes[child2]:
+                    node.includes.remove(child1)
+                    break
 
         for child in node.includes:
             reachable_nodes[node].add(child)
