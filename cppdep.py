@@ -10,6 +10,8 @@ from jinja2 import Environment, FileSystemLoader
 
 class SourceFile:
     file_extensions = {".cpp", ".cc", ".c++", ".hpp", ".h", ".inl"}
+    display_path = False
+    max_path_length = 30
 
     def __init__(self, file_path, missing=False):
         self.file_path = file_path
@@ -27,6 +29,31 @@ class SourceFile:
     def name(self):
         return os.path.basename(self.id())
 
+    def path(self):
+        file_path = os.path.relpath(self.id())
+        # Insert a line break for long paths at the slash that is closest to the
+        # middle.
+        if len(file_path) > SourceFile.max_path_length:
+            mid_index = len(file_path) // 2
+            index1 = file_path.rfind("/", 0, mid_index)
+            index2 = file_path.find("/", mid_index)
+            index = mid_index
+            if index1 != -1 and index2 == -1:
+                index = index1
+            elif index1 == -1 and index2 != -1:
+                index = index2
+            elif index1 != -1 and index2 != -1:
+                index1_diff = mid_index - index1
+                index2_diff = index2 - mid_index
+                if index1_diff < index2_diff:
+                    index = index1
+                elif index2_diff < index1_diff:
+                    index = index2
+                else:
+                    index = index2
+            return f"{file_path[:index]}\n{file_path[index:]}"
+        return file_path
+
     def node_str(self):
         return f""""{self.id()}" [
             shape=box,
@@ -35,7 +62,7 @@ class SourceFile:
             penwidth={2 if self.root_file else 1},
             fillcolor={'green' if self.main_file else 'red' if self.missing else 'blue' if self.compile_error else 'white'},
             margin="0.1,0",
-            label="{self.name()}"];"""
+            label="{self.path() if SourceFile.display_path else self.name()}"];"""
 
     def edge_str(self):
         return f'"{self.id()}"'
@@ -64,6 +91,7 @@ class Component:
         rank=same;
         label="{self.name()}";
         style=filled;
+        penwidth=2;
         fillcolor=lightgrey;
 
         {f"{newline}{newline}        ".join([file.node_str() for file in self.source_files])}
