@@ -334,30 +334,34 @@ def parse_arguments():
     # Define arguments.
     parser.add_argument(
         "source_file",
-        metavar="source-file",
         # action="store",
         nargs="*",
         # default=[],
     )
     # Define options.
     parser.add_argument(
-        "-S",
+        "-p",
+        "--display_path",
+        action="store_true",
+        # nargs=0,
+        # default=False,
+    )
+    parser.add_argument(
+        "-s",
         "--source_dir",
-        metavar="source-dir",
         action="append",
         # nargs=1,
         default=[],
     )
     parser.add_argument(
-        "-I",
+        "-i",
         "--include_dir",
-        metavar="include-dir",
         action="append",
         # nargs=1,
         default=[],
     )
     parser.add_argument(
-        "-D",
+        "-m",
         "--macro",
         action="append",
         # nargs=1,
@@ -375,6 +379,7 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+    SourceFile.display_path = args.display_path
     source_files = find_source_files(args.source_dir)
     source_files = preprocess_source_files(
         source_files, args.include_dir, args.macro
