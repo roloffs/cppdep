@@ -13,8 +13,9 @@ class SourceFile:
     display_path = False
     max_path_length = 30
 
-    def __init__(self, file_path, missing=False):
+    def __init__(self, file_path, missing=False, base_path=None):
         self.file_path = file_path
+        self.base_path = base_path
         self.missing = missing
         self.main_file = False
         self.root_file = False
@@ -30,7 +31,7 @@ class SourceFile:
         return os.path.basename(self.id())
 
     def path(self):
-        file_path = os.path.relpath(self.id())
+        file_path = os.path.relpath(self.id(), self.base_path)
         # Insert a line break for long paths at the slash that is closest to the
         # middle.
         if len(file_path) > SourceFile.max_path_length:
@@ -115,7 +116,9 @@ def find_source_files(source_dirs):
                 # Check for source file.
                 if file_ext.lower() in SourceFile.file_extensions:
                     file_path = os.path.join(root, filename)
-                    source_files[file_path] = SourceFile(file_path)
+                    source_files[file_path] = SourceFile(
+                        file_path, base_path=source_dir
+                    )
 
     return source_files
 
@@ -125,7 +128,7 @@ def find_include_file(include_path, include_dirs, local_dir):
     for include_dir in include_dirs:
         file_path = os.path.join(include_dir, include_path)
         if os.path.exists(file_path):
-            return file_path
+            return include_dir, file_path
 
     # Successively go up in the file hierarchy of local dir and check whether
     # appending the include path results in an existing file.
@@ -133,10 +136,10 @@ def find_include_file(include_path, include_dirs, local_dir):
     while tmp_dir != "/":
         file_path = os.path.join(tmp_dir, include_path)
         if os.path.exists(file_path):
-            return file_path
+            return tmp_dir, file_path
         tmp_dir = os.path.dirname(tmp_dir)
 
-    return None
+    return None, None
 
 
 def preprocess_source_file(
@@ -187,7 +190,9 @@ def preprocess_source_file(
 
         for include_path in list(map(os.path.normpath, includes[2:])):
             local_dir = os.path.dirname(source_file.file_path)
-            file_path = find_include_file(include_path, include_dirs, local_dir)
+            base_path, file_path = find_include_file(
+                include_path, include_dirs, local_dir
+            )
             # print(f"Lookup {include_path} -> {file_path}")
 
             if file_path:
@@ -196,7 +201,7 @@ def preprocess_source_file(
                 elif file_path in include_files:
                     child = include_files[file_path]
                 else:
-                    child = SourceFile(file_path)
+                    child = SourceFile(file_path, base_path=base_path)
                     include_files[file_path] = child
 
             else:
