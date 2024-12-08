@@ -12,13 +12,11 @@ from jinja2 import Environment, FileSystemLoader
 class SourceFile:
     file_extensions = {".cpp", ".cc", ".c++", ".hpp", ".h", ".inl"}
 
-    def __init__(
-        self, file_path, root_file=False, main_file=False, missing=False
-    ):
+    def __init__(self, file_path, missing=False):
         self.file_path = file_path
-        self.root_file = root_file
-        self.main_file = main_file
         self.missing = missing
+        self.main_file = False
+        self.root_file = False
         self.preprocessed = False
         self.compile_error = False
         self.component = None
