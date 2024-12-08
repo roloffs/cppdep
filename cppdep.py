@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -299,11 +298,7 @@ def render_graph(graph_dict, outfile):
     )
     graph_template = env.get_template("graph.j2")
     graph_template.stream(graph_dict).dump(outfile)
-    print(outfile + " has been written")
-
-
-def to_dict(obj):
-    return json.loads(json.dumps(obj, default=vars))
+    print(f"'{outfile}' has been written")
 
 
 def parse_arguments():
@@ -362,7 +357,6 @@ def main():
         {"source_files": source_files.values(), "components": components},
         args.outfile,
     )
-    return 0
 
 
 if __name__ == "__main__":
