@@ -310,19 +310,45 @@ def to_dict(obj):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("source_file", metavar="source-file", nargs="*")
+    # Define arguments.
     parser.add_argument(
-        "-S", "--source_dir", metavar="source-dir", action="append", default=[]
+        "source_file",
+        metavar="source-file",
+        # action="store",
+        nargs="*",
+        # default=[],
+    )
+    # Define options.
+    parser.add_argument(
+        "-S",
+        "--source_dir",
+        metavar="source-dir",
+        action="append",
+        # nargs=1,
+        default=[],
     )
     parser.add_argument(
         "-I",
         "--include_dir",
         metavar="include-dir",
         action="append",
+        # nargs=1,
         default=[],
     )
-    parser.add_argument("-D", "--macro", action="append", default=[])
-    parser.add_argument("-o", "--outfile", nargs=1, default="graph.dot")
+    parser.add_argument(
+        "-D",
+        "--macro",
+        action="append",
+        # nargs=1,
+        default=[],
+    )
+    parser.add_argument(
+        "-o",
+        "--outfile",
+        # action="store",
+        # nargs=1,
+        default="graph.dot",
+    )
     return parser.parse_args()
 
 
