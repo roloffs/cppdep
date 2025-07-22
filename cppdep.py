@@ -18,7 +18,6 @@ class SourceFile:
         self.base_path = base_path
         self.missing = missing
         self.main_file = False
-        self.root_file = False
         self.preprocessed = False
         self.compile_error = False
         self.component = None
@@ -59,8 +58,6 @@ class SourceFile:
         return f""""{self.id()}" [
             shape=box,
             style=filled,
-            color={'blue' if self.root_file else 'black'},
-            penwidth={2 if self.root_file else 1},
             fillcolor={'green' if self.main_file else 'red' if self.missing else 'blue' if self.compile_error else 'white'},
             margin="0.1,0",
             label="{self.path() if SourceFile.display_path else self.name()}"];"""
@@ -74,6 +71,7 @@ class SourceFile:
 
 class Component:
     def __init__(self):
+        self.marked = False
         self.source_files = []
 
     def add_source_file(self, source_file):
@@ -93,7 +91,7 @@ class Component:
         label="{self.name()}";
         style=filled;
         penwidth=2;
-        fillcolor=lightgrey;
+        fillcolor={'blue' if self.marked else 'lightgrey'};
 
         {f"{newline}{newline}        ".join([file.node_str() for file in self.source_files])}
     }}"""
@@ -274,6 +272,16 @@ def component_analysis(source_files):
     return components
 
 
+def mark_root_files(source_files, root_files):
+    root_files = list(set(map(os.path.abspath, root_files)))
+    for root_file in root_files:
+        if root_file not in source_files:
+            print(f"{root_file} not found in codebase")
+            continue
+        source_files[root_file].component.marked = True
+    return source_files
+
+
 def transitive_reduction(source_files):
     # Transitive reduction.
     temp_mark = {}
@@ -338,7 +346,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     # Define arguments.
     parser.add_argument(
-        "source_file",
+        "root_file",
         # action="store",
         nargs="*",
         # default=[],
@@ -390,6 +398,7 @@ def main():
         source_files, args.include_dir, args.macro
     )
     components = component_analysis(source_files)
+    source_files = mark_root_files(source_files, args.root_file)
     source_files = transitive_reduction(source_files)
     render_graph(
         {"source_files": source_files.values(), "components": components},
